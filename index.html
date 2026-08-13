@@ -1,0 +1,833 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Calendrier des déplacements et concertations</title>
+<style>
+  .viz-root {
+    color-scheme: light;
+    --surface-1:      #fcfcfb;
+    --surface-page:   #f9f9f7;
+    --text-primary:   #0b0b0b;
+    --text-secondary: #52514e;
+    --text-muted:     #898781;
+    --gridline:       #e1e0d9;
+    --baseline:       #c3c2b7;
+    --border:         rgba(11,11,11,0.10);
+    --series-blue:    #2a78d6;
+    --series-aqua:    #1baf7a;
+    --status-good:    #0ca30c;
+    --status-todo:    #2a78d6;
+    --status-critical:#d03b3b;
+    --weekend-bg:     #f2f1ec;
+    --today-line:     #d03b3b;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; padding: 0;
+    background: var(--surface-page);
+    font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+    color: var(--text-primary);
+  }
+  .wrap {
+    max-width: 100%;
+    padding: 20px;
+  }
+  h1 {
+    font-size: 20px;
+    margin: 0 0 4px 0;
+    font-weight: 700;
+  }
+  .subtitle {
+    color: var(--text-secondary);
+    font-size: 13px;
+    margin: 0 0 16px 0;
+  }
+
+  /* ---- Legend ---- */
+  .legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 18px;
+    align-items: center;
+    background: var(--surface-1);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 10px 16px;
+    margin-bottom: 14px;
+    font-size: 12.5px;
+    color: var(--text-secondary);
+  }
+  .legend-group { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+  .legend-sep { width: 1px; height: 18px; background: var(--gridline); }
+  .legend-item { display: flex; align-items: center; gap: 6px; white-space: nowrap; }
+  .legend-icon {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 20px; height: 20px; font-size: 13px;
+  }
+  .legend-dot {
+    width: 12px; height: 12px; border-radius: 50%; display: inline-block;
+    border: 2px solid;
+  }
+
+  /* ---- Toolbar ---- */
+  .toolbar {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+    margin-bottom: 10px;
+    font-size: 12.5px;
+    color: var(--text-secondary);
+  }
+  .toolbar button {
+    font: inherit;
+    font-size: 12px;
+    padding: 5px 10px;
+    border-radius: 6px;
+    border: 1px solid var(--border);
+    background: var(--surface-1);
+    color: var(--text-primary);
+    cursor: pointer;
+  }
+  .toolbar button:hover { background: var(--weekend-bg); }
+
+  /* ---- Mission progress ---- */
+  .progress-card {
+    background: var(--surface-1);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 12px 16px;
+    margin-bottom: 14px;
+  }
+  .progress-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    margin-bottom: 8px;
+  }
+  .progress-title {
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--text-primary);
+  }
+  .progress-count {
+    font-size: 12.5px;
+    color: var(--text-secondary);
+  }
+  .progress-count b { color: var(--status-good); font-weight: 700; }
+  .progress-track {
+    position: relative;
+    height: 10px;
+    border-radius: 6px;
+    background: var(--gridline);
+    overflow: hidden;
+  }
+  .progress-fill {
+    position: absolute;
+    left: 0; top: 0; bottom: 0;
+    background: var(--status-good);
+    border-radius: 6px;
+    transition: width .4s ease;
+  }
+  .progress-segments {
+    display: flex;
+    gap: 3px;
+    margin-top: 8px;
+  }
+  .progress-seg {
+    flex: 1;
+    height: 6px;
+    border-radius: 3px;
+    background: var(--gridline);
+    cursor: default;
+  }
+  .progress-seg.done { background: var(--status-good); }
+  .progress-seg.pending { background: var(--baseline); }
+
+  /* ---- Gantt container ---- */
+  .gantt-scroll {
+    overflow: auto;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: var(--surface-1);
+    max-height: 74vh;
+  }
+  .gantt-inner {
+    position: relative;
+  }
+  .label-col-header {
+    position: sticky;
+    left: 0;
+    top: 0;
+    z-index: 5;
+    background: var(--surface-1);
+    border-right: 1px solid var(--gridline);
+    border-bottom: 1px solid var(--baseline);
+  }
+  .month-row, .day-row {
+    position: sticky;
+    top: 0;
+    z-index: 3;
+    background: var(--surface-1);
+  }
+  .month-row { top: 0; height: 26px; z-index: 4; }
+  .day-row { top: 26px; height: 34px; z-index: 4; border-bottom: 1px solid var(--baseline); }
+
+  .month-cell {
+    position: absolute;
+    top: 0; height: 26px;
+    display: flex; align-items: center; padding-left: 8px;
+    font-size: 11.5px; font-weight: 700; color: var(--text-secondary);
+    border-left: 1px solid var(--gridline);
+    text-transform: uppercase; letter-spacing: 0.04em;
+  }
+  .day-cell {
+    position: absolute;
+    top: 0; height: 34px;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    font-size: 10.5px; color: var(--text-muted);
+    border-left: 1px solid var(--gridline);
+  }
+  .day-cell .dow { font-size: 9px; text-transform: uppercase; }
+  .day-cell .dom { font-size: 12px; font-weight: 600; color: var(--text-secondary); }
+  .day-cell.weekend { background: var(--weekend-bg); }
+
+  .row-label {
+    position: sticky;
+    left: 0;
+    z-index: 2;
+    background: var(--surface-1);
+    border-right: 1px solid var(--gridline);
+    border-bottom: 1px solid var(--gridline);
+    padding: 6px 10px;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    font-size: 12px;
+  }
+  .row-label .ref-name { font-weight: 700; color: var(--text-primary); }
+  .row-label .ref-sub { font-size: 10.5px; color: var(--text-muted); margin-top: 1px; }
+
+  .row-track {
+    position: absolute;
+    border-bottom: 1px solid var(--gridline);
+  }
+  .row-track.weekend-strip { }
+
+  .bg-daycol {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+  }
+  .bg-daycol.weekend { background: var(--weekend-bg); }
+
+  .today-line {
+    position: absolute;
+    top: 0;
+    width: 2px;
+    background: var(--today-line);
+    z-index: 3;
+  }
+  .today-flag {
+    position: sticky;
+    top: 60px;
+    background: var(--today-line);
+    color: #fff;
+    font-size: 9.5px;
+    font-weight: 700;
+    padding: 1px 5px;
+    border-radius: 4px;
+    white-space: nowrap;
+    transform: translateX(-50%);
+  }
+
+  .mission-line {
+    position: absolute;
+    height: 2px;
+    background: var(--baseline);
+    border-radius: 1px;
+  }
+
+  .marker {
+    position: absolute;
+    width: 22px; height: 22px;
+    border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 12px;
+    background: var(--surface-1);
+    border: 2px solid var(--status-todo);
+    cursor: pointer;
+    transition: transform .08s ease, box-shadow .08s ease;
+  }
+  .marker:hover, .marker:focus, .marker.active {
+    transform: scale(1.18);
+    box-shadow: 0 2px 8px rgba(0,0,0,0.18);
+    z-index: 6;
+    outline: none;
+  }
+  .marker.status-done { border-color: var(--status-good); }
+  .marker.status-todo { border-color: var(--status-todo); }
+  .marker.status-cancelled {
+    border-color: var(--status-critical);
+    border-style: dashed;
+    opacity: 0.55;
+  }
+  .marker.status-cancelled::after {
+    content: "";
+    position: absolute;
+    left: 2px; right: 2px; top: 50%;
+    height: 2px;
+    background: var(--status-critical);
+    transform: rotate(-18deg);
+  }
+
+  /* ---- Tooltip ---- */
+  #tooltip {
+    position: fixed;
+    z-index: 50;
+    max-width: 280px;
+    background: #1a1a19;
+    color: #ffffff;
+    border-radius: 8px;
+    padding: 10px 12px;
+    font-size: 12px;
+    line-height: 1.5;
+    box-shadow: 0 6px 20px rgba(0,0,0,0.25);
+    pointer-events: none;
+    opacity: 0;
+    transform: translateY(4px);
+    transition: opacity .1s ease, transform .1s ease;
+  }
+  #tooltip.show { opacity: 1; transform: translateY(0); }
+  #tooltip .tt-title { font-weight: 700; font-size: 13px; margin-bottom: 4px; }
+  #tooltip .tt-row { display: flex; gap: 6px; color: #d7d6cf; }
+  #tooltip .tt-row b { color: #ffffff; font-weight: 600; }
+  #tooltip .tt-status {
+    display: inline-block; margin-top: 6px; padding: 2px 8px; border-radius: 10px;
+    font-size: 11px; font-weight: 700;
+  }
+  #tooltip .tt-status.status-done { background: rgba(12,163,12,0.25); color: #6fe66f; }
+  #tooltip .tt-status.status-todo { background: rgba(42,120,214,0.25); color: #8ab8f0; }
+  #tooltip .tt-status.status-cancelled { background: rgba(208,59,59,0.25); color: #f19b9b; }
+
+  /* ---- Table view (accessibility fallback) ---- */
+  details.table-view {
+    margin-top: 16px;
+    background: var(--surface-1);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 10px 14px;
+  }
+  details.table-view summary {
+    cursor: pointer;
+    font-weight: 700;
+    font-size: 13px;
+    padding: 4px 0;
+  }
+  .table-scroll { overflow: auto; max-height: 60vh; margin-top: 10px; }
+  table.data-table {
+    border-collapse: collapse;
+    width: 100%;
+    font-size: 12px;
+  }
+  table.data-table th, table.data-table td {
+    text-align: left;
+    padding: 6px 8px;
+    border-bottom: 1px solid var(--gridline);
+    white-space: nowrap;
+  }
+  table.data-table th {
+    position: sticky; top: 0;
+    background: var(--surface-1);
+    color: var(--text-secondary);
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+  }
+  table.data-table td.status-done { color: var(--status-good); font-weight: 600; }
+  table.data-table td.status-todo { color: var(--status-todo); font-weight: 600; }
+  table.data-table td.status-cancelled { color: var(--status-critical); font-weight: 600; }
+
+  @media (max-width: 640px) {
+    .wrap { padding: 12px; }
+    .legend { font-size: 11.5px; gap: 10px; }
+  }
+</style>
+</head>
+<body>
+<div class="viz-root">
+<div class="wrap">
+  <h1>Calendrier des déplacements &amp; concertations</h1>
+  <p class="subtitle">Vue Gantt — survolez ou touchez un repère pour voir les horaires et détails. Défilez horizontalement pour parcourir juillet → octobre 2026.</p>
+
+  <div class="legend">
+    <div class="legend-group">
+      <div class="legend-item"><span class="legend-icon">🛫</span> Départ vers une île (hors Tahiti)</div>
+      <div class="legend-item"><span class="legend-icon">🛬</span> Retour vers Tahiti</div>
+      <div class="legend-item"><span class="legend-icon">🚢</span> Déplacement bateau</div>
+      <div class="legend-item"><span class="legend-icon">🤝</span> Concertation présentielle</div>
+      <div class="legend-item"><span class="legend-icon">💻</span> Concertation visio</div>
+    </div>
+    <div class="legend-sep"></div>
+    <div class="legend-group">
+      <div class="legend-item"><span class="legend-dot" style="border-color:#0ca30c;"></span> Terminé</div>
+      <div class="legend-item"><span class="legend-dot" style="border-color:#2a78d6;"></span> À venir</div>
+      <div class="legend-item"><span class="legend-dot" style="border-color:#d03b3b; border-style:dashed;"></span> Annulé</div>
+    </div>
+    <div class="legend-sep"></div>
+    <div class="legend-item"><span style="display:inline-block;width:10px;height:10px;background:#d03b3b;border-radius:2px;"></span> Aujourd'hui</div>
+  </div>
+
+  <div class="progress-card">
+    <div class="progress-head">
+      <span class="progress-title">Avancement des missions &amp; visios</span>
+      <span class="progress-count" id="progressCount"></span>
+    </div>
+    <div class="progress-track"><div class="progress-fill" id="progressFill"></div></div>
+    <div class="progress-segments" id="progressSegments"></div>
+  </div>
+
+  <div class="toolbar">
+    <button id="scrollToday">Aller à aujourd'hui</button>
+    <span id="rangeInfo"></span>
+  </div>
+
+  <div class="gantt-scroll" id="ganttScroll">
+    <div class="gantt-inner" id="ganttInner"></div>
+  </div>
+
+  <details class="table-view">
+    <summary>Voir toutes les données sous forme de tableau</summary>
+    <div class="table-scroll">
+      <table class="data-table" id="dataTable">
+        <thead>
+          <tr>
+            <th>Date</th><th>Référence</th><th>Action</th><th>Île</th>
+            <th>Type concertation</th><th>Départ</th><th>Arrivée</th>
+            <th>Début</th><th>Fin</th><th>Population</th><th>Statut</th>
+          </tr>
+        </thead>
+        <tbody id="dataTableBody"></tbody>
+      </table>
+    </div>
+  </details>
+</div>
+</div>
+
+<div id="tooltip"></div>
+
+<script>
+const DATA = [{"date": "2026-07-13", "reference": "Visio 1", "action": "Concertation", "ile": "Makatea", "typeConcertation": "Visio", "heureDepart": "NA", "heureArrivee": "NA", "heureDebut": "09h00", "heureFin": "11h00", "typePopulation": "Institutionnel", "status": "Done"}, {"date": "2026-07-13", "reference": "Visio 1", "action": "Concertation", "ile": "Makatea", "typeConcertation": "Visio", "heureDepart": "NA", "heureArrivee": "NA", "heureDebut": "14h00", "heureFin": "16h00", "typePopulation": "Acteurs économique / associatifs", "status": "Done"}, {"date": "2026-07-16", "reference": "Visio 2", "action": "Concertation", "ile": "Fatu Hiva", "typeConcertation": "Visio", "heureDepart": "NA", "heureArrivee": "NA", "heureDebut": "09h00", "heureFin": "11h00", "typePopulation": "Institutionnel", "status": "Done"}, {"date": "2026-07-20", "reference": "Mission 1", "action": "Déplacement avion", "ile": "Raivavae", "typeConcertation": "NA", "heureDepart": "09h40", "heureArrivee": "10h20", "heureDebut": "NA", "heureFin": "NA", "typePopulation": "NA", "status": "Done"}, {"date": "2026-07-20", "reference": "Mission 1", "action": "Concertation", "ile": "Raivavae", "typeConcertation": "Présentiel", "heureDepart": "NA", "heureArrivee": "NA", "heureDebut": "15h30", "heureFin": "19h00", "typePopulation": "Institutionnel", "status": "Done"}, {"date": "2026-07-20", "reference": "Mission 1", "action": "Concertation", "ile": "Raivavae", "typeConcertation": "Présentiel", "heureDepart": "NA", "heureArrivee": "NA", "heureDebut": "08h00", "heureFin": "12h00", "typePopulation": "Acteurs économique", "status": "Cancelled"}, {"date": "2026-07-20", "reference": "Mission 1", "action": "Concertation", "ile": "Raivavae", "typeConcertation": "Présentiel", "heureDepart": "NA", "heureArrivee": "NA", "heureDebut": "16h00", "heureFin": "19h00", "typePopulation": "Acteurs économiques / associatifs / population", "status": "Done"}, {"date": "2026-07-21", "reference": "Mission 1", "action": "Déplacement avion", "ile": "Tahiti", "typeConcertation": "NA", "heureDepart": "08h50", "heureArrivee": "10h40", "heureDebut": "NA", "heureFin": "NA", "typePopulation": "NA", "status": "Done"}, {"date": "2026-07-22", "reference": "Visio 2", "action": "Concertation", "ile": "Fatu Hiva", "typeConcertation": "Visio", "heureDepart": "NA", "heureArrivee": "NA", "heureDebut": "14h00", "heureFin": "17h00", "typePopulation": "Acteurs économique / associatifs", "status": "Done"}, {"date": "2026-07-29", "reference": "Mission 2", "action": "Déplacement avion", "ile": "Hao", "typeConcertation": "NA", "heureDepart": "11h55", "heureArrivee": "12h35", "heureDebut": "NA", "heureFin": "NA", "typePopulation": "NA", "status": "Done"}, {"date": "2026-07-29", "reference": "Mission 2", "action": "Concertation", "ile": "Hao", "typeConcertation": "Présentiel", "heureDepart": "NA", "heureArrivee": "NA", "heureDebut": "16h00", "heureFin": "19h00", "typePopulation": "Institutionnel", "status": "Done"}, {"date": "2026-07-30", "reference": "Mission 2", "action": "Concertation", "ile": "Hao", "typeConcertation": "Présentiel", "heureDepart": "NA", "heureArrivee": "NA", "heureDebut": "08h30", "heureFin": "11h30", "typePopulation": "Acteurs économiques", "status": "Done"}, {"date": "2026-07-30", "reference": "Mission 2", "action": "Concertation", "ile": "Hao", "typeConcertation": "Présentiel", "heureDepart": "NA", "heureArrivee": "NA", "heureDebut": "17h00", "heureFin": "19h30", "typePopulation": "Acteurs associatifs / Population", "status": "Done"}, {"date": "2026-07-31", "reference": "Mission 2", "action": "Déplacement avion", "ile": "Tahiti", "typeConcertation": "NA", "heureDepart": "14h20", "heureArrivee": "16h35", "heureDebut": "NA", "heureFin": "NA", "typePopulation": "NA", "status": "Done"}, {"date": "2026-08-03", "reference": "Mission 3", "action": "Déplacement avion", "ile": "Rangiroa", "typeConcertation": "NA", "heureDepart": "06h40", "heureArrivee": "07h40", "heureDebut": "NA", "heureFin": "NA", "typePopulation": "NA", "status": "Done"}, {"date": "2026-08-03", "reference": "Mission 3", "action": "Concertation", "ile": "Rangiroa", "typeConcertation": "Présentiel", "heureDepart": "NA", "heureArrivee": "NA", "heureDebut": "09h00", "heureFin": "12h00", "typePopulation": "Institutionnel", "status": "Done"}, {"date": "2026-08-04", "reference": "Mission 3", "action": "Concertation", "ile": "Rangiroa", "typeConcertation": "Présentiel", "heureDepart": "NA", "heureArrivee": "NA", "heureDebut": "09h30", "heureFin": "13h30", "typePopulation": "Acteurs économiques / associatifs", "status": "Done"}, {"date": "2026-08-04", "reference": "Mission 3", "action": "Concertation", "ile": "Rangiroa", "typeConcertation": "Présentiel", "heureDepart": "NA", "heureArrivee": "NA", "heureDebut": "17h00", "heureFin": "20h00", "typePopulation": "Population (avec acteurs économiques)", "status": "Done"}, {"date": "2026-08-05", "reference": "Mission 3", "action": "Déplacement avion", "ile": "Fakarava", "typeConcertation": "NA", "heureDepart": "11h55", "heureArrivee": "12h40", "heureDebut": "NA", "heureFin": "NA", "typePopulation": "NA", "status": "Done"}, {"date": "2026-08-05", "reference": "Mission 3", "action": "Concertation", "ile": "Fakarava", "typeConcertation": "Présentiel", "heureDepart": "NA", "heureArrivee": "NA", "heureDebut": "15h00", "heureFin": "17h00", "typePopulation": "Institutionnel", "status": "Done"}, {"date": "2026-08-06", "reference": "Mission 3", "action": "Concertation", "ile": "Fakarava", "typeConcertation": "Présentiel", "heureDepart": "NA", "heureArrivee": "NA", "heureDebut": "08H30", "heureFin": "11H30", "typePopulation": "Acteurs économiques", "status": "Done"}, {"date": "2026-08-06", "reference": "Mission 3", "action": "Concertation", "ile": "Fakarava", "typeConcertation": "Présentiel", "heureDepart": "NA", "heureArrivee": "NA", "heureDebut": "16h00", "heureFin": "19h00", "typePopulation": "Acteurs associatifs / Population", "status": "Done"}, {"date": "2026-08-07", "reference": "Mission 3", "action": "Déplacement avion", "ile": "Tahiti", "typeConcertation": "NA", "heureDepart": "16h20", "heureArrivee": "17h35", "heureDebut": "NA", "heureFin": "NA", "typePopulation": "NA", "status": "Done"}, {"date": "2026-08-08", "reference": "Mission 4", "action": "Déplacement avion", "ile": "Tikehau", "typeConcertation": "NA", "heureDepart": "07h30", "heureArrivee": "08h25", "heureDebut": "NA", "heureFin": "NA", "typePopulation": "NA", "status": "Done"}, {"date": "2026-08-08", "reference": "Mission 4", "action": "Concertation", "ile": "Tikehau", "typeConcertation": "Présentiel", "heureDepart": "NA", "heureArrivee": "NA", "heureDebut": "09h00", "heureFin": "12h00", "typePopulation": "Institutionnel", "status": "Cancelled"}, {"date": "2026-08-08", "reference": "Mission 4", "action": "Concertation", "ile": "Tikehau", "typeConcertation": "Présentiel", "heureDepart": "NA", "heureArrivee": "NA", "heureDebut": "13h00", "heureFin": "16h00", "typePopulation": "Acteurs économiques / associatifs / population", "status": "Done"}, {"date": "2026-08-09", "reference": "Mission 4", "action": "Déplacement avion", "ile": "Tahiti", "typeConcertation": "NA", "heureDepart": "16h50", "heureArrivee": "18h50", "heureDebut": "NA", "heureFin": "NA", "typePopulation": "NA", "status": "Done"}, {"date": "2026-08-10", "reference": "Visio 3", "action": "Concertation", "ile": "Rapa", "typeConcertation": "Visio", "heureDepart": "NA", "heureArrivee": "NA", "heureDebut": "07h30", "heureFin": "11h30", "typePopulation": "Institutionnel", "status": "Done"}, {"date": "2026-08-10", "reference": "Visio 3", "action": "Concertation", "ile": "Rapa", "typeConcertation": "Visio", "heureDepart": "NA", "heureArrivee": "NA", "heureDebut": "13h00", "heureFin": "16h00", "typePopulation": "Acteurs économique / associatifs", "status": "Done"}, {"date": "2026-08-14", "reference": "Visio 4", "action": "Concertation", "ile": "Tubuai", "typeConcertation": "Visio", "heureDepart": "NA", "heureArrivee": "NA", "heureDebut": "08h00", "heureFin": "12h00", "typePopulation": "Institutionnel", "status": "To do"}, {"date": "2026-08-18", "reference": "Mission 5", "action": "Déplacement avion", "ile": "Huahine", "typeConcertation": "Présentiel", "heureDepart": "06h45", "heureArrivee": "07h25", "heureDebut": "NA", "heureFin": "NA", "typePopulation": "NA", "status": "To do"}, {"date": "2026-08-18", "reference": "Mission 5", "action": "Concertation", "ile": "Huahine", "typeConcertation": "Présentiel", "heureDepart": "NA", "heureArrivee": "NA", "heureDebut": "08h00", "heureFin": "12h00", "typePopulation": "Institutionnel", "status": "To do"}, {"date": "2026-08-18", "reference": "Mission 5", "action": "Concertation", "ile": "Huahine", "typeConcertation": "Présentiel", "heureDepart": "NA", "heureArrivee": "NA", "heureDebut": "17h00", "heureFin": "20h30", "typePopulation": "Acteurs économiques", "status": "To do"}, {"date": "2026-08-19", "reference": "Mission 5", "action": "Concertation", "ile": "Huahine", "typeConcertation": "Présentiel", "heureDepart": "NA", "heureArrivee": "NA", "heureDebut": "11h30", "heureFin": "14h00", "typePopulation": "Acteurs associatifs / Population", "status": "To do"}, {"date": "2026-08-19", "reference": "Mission 5", "action": "Déplacement avion", "ile": "Raiatea", "typeConcertation": "NA", "heureDepart": "15h45", "heureArrivee": "16h05", "heureDebut": "NA", "heureFin": "NA", "typePopulation": "NA", "status": "To do"}, {"date": "2026-08-20", "reference": "Mission 5", "action": "Concertation", "ile": "Raiatea", "typeConcertation": "Présentiel", "heureDepart": "NA", "heureArrivee": "NA", "heureDebut": "08h00", "heureFin": "12h00", "typePopulation": "Institutionnel", "status": "To do"}, {"date": "2026-08-20", "reference": "Mission 5", "action": "Concertation", "ile": "Raiatea", "typeConcertation": "Présentiel", "heureDepart": "NA", "heureArrivee": "NA", "heureDebut": "17h00", "heureFin": "20h30", "typePopulation": "Acteurs économiques", "status": "To do"}, {"date": "2026-08-21", "reference": "Mission 5", "action": "Concertation", "ile": "Raiatea", "typeConcertation": "Présentiel", "heureDepart": "NA", "heureArrivee": "NA", "heureDebut": "14h00", "heureFin": "16h30", "typePopulation": "Acteurs associatifs / Population", "status": "To do"}, {"date": "2026-08-21", "reference": "Mission 5", "action": "Déplacement avion", "ile": "Tahiti", "typeConcertation": "NA", "heureDepart": "18h35", "heureArrivee": "19h20", "heureDebut": "NA", "heureFin": "NA", "typePopulation": "NA", "status": "To do"}, {"date": "2026-08-22", "reference": "Visio 4", "action": "Concertation", "ile": "Tubuai", "typeConcertation": "Visio", "heureDepart": "NA", "heureArrivee": "NA", "heureDebut": "08h00", "heureFin": "12h00", "typePopulation": "Acteurs économiques / associatifs", "status": "To do"}, {"date": "2026-08-24", "reference": "Visio 5", "action": "Concertation", "ile": "Rimatara", "typeConcertation": "Visio", "heureDepart": "NA", "heureArrivee": "NA", "heureDebut": "09h00", "heureFin": "12h00", "typePopulation": "Institutionnel", "status": "To do"}, {"date": "2026-08-24", "reference": "Visio 5", "action": "Concertation", "ile": "Rimatara", "typeConcertation": "Visio", "heureDepart": "NA", "heureArrivee": "NA", "heureDebut": "13h00", "heureFin": "16h00", "typePopulation": "Acteurs économiques / associatifs", "status": "To do"}, {"date": "2026-08-28", "reference": "Mission 6", "action": "Déplacement avion", "ile": "Tahiti", "typeConcertation": "NA", "heureDepart": "12h45", "heureArrivee": "14h30", "heureDebut": "NA", "heureFin": "NA", "typePopulation": "NA", "status": "To do"}, {"date": "2026-08-28", "reference": "Mission 6", "action": "Concertation", "ile": "Manihi", "typeConcertation": "Présentiel", "heureDepart": "NA", "heureArrivee": "NA", "heureDebut": "15h30", "heureFin": "18h30", "typePopulation": "Institutionnel", "status": "To do"}, {"date": "2026-08-29", "reference": "Mission 6", "action": "Concertation", "ile": "Manihi", "typeConcertation": "Présentiel", "heureDepart": "NA", "heureArrivee": "NA", "heureDebut": "08h30", "heureFin": "11h30", "typePopulation": "Acteurs économiques", "status": "To do"}, {"date": "2026-08-29", "reference": "Mission 6", "action": "Concertation", "ile": "Manihi", "typeConcertation": "Présentiel", "heureDepart": "NA", "heureArrivee": "NA", "heureDebut": "14h30", "heureFin": "17h30", "typePopulation": "Acteurs associatifs / Population", "status": "To do"}, {"date": "2026-08-30", "reference": "Mission 6", "action": "Déplacement avion", "ile": "Tahiti", "typeConcertation": "NA", "heureDepart": "10h40", "heureArrivee": "12h00", "heureDebut": "NA", "heureFin": "NA", "typePopulation": "NA", "status": "To do"}, {"date": "2026-09-01", "reference": "Mission 7", "action": "Concertation", "ile": "Tahiti", "typeConcertation": "Présentiel", "heureDepart": "NA", "heureArrivee": "NA", "heureDebut": "10h00", "heureFin": "13h00", "typePopulation": "Institutionnel Tahiti Nui ( Mahina à Paea)", "status": "To do"}, {"date": "2026-09-02", "reference": "Mission 7", "action": "Concertation", "ile": "Tahiti", "typeConcertation": "Présentiel", "heureDepart": "NA", "heureArrivee": "NA", "heureDebut": "08h30", "heureFin": "11h30", "typePopulation": "Institutionnel Tahiti Iti (Hitiaa O Te Ra - Papara)", "status": "To do"}, {"date": "2026-09-22", "reference": "Mission 7", "action": "Concertation", "ile": "Tahiti", "typeConcertation": "Présentiel", "heureDepart": "NA", "heureArrivee": "NA", "heureDebut": "TBD", "heureFin": "TBD", "typePopulation": "Acteurs économiques Tahiti Nui ( Mahina à Paea)", "status": "To do"}, {"date": "2026-09-23", "reference": "Mission 7", "action": "Concertation", "ile": "Tahiti", "typeConcertation": "Présentiel", "heureDepart": "NA", "heureArrivee": "NA", "heureDebut": "TBD", "heureFin": "TBD", "typePopulation": "Acteurs économiques Tahiti Iti ( Hitiaa O Te Ra - Papara)", "status": "To do"}, {"date": "2026-09-24", "reference": "Mission 7", "action": "Concertation", "ile": "Tahiti", "typeConcertation": "Présentiel", "heureDepart": "NA", "heureArrivee": "NA", "heureDebut": "TBD", "heureFin": "TBD", "typePopulation": "Acteurs associatifs / Population (Mahina à Paea)", "status": "To do"}, {"date": "2026-09-25", "reference": "Mission 7", "action": "Concertation", "ile": "Tahiti", "typeConcertation": "Présentiel", "heureDepart": "NA", "heureArrivee": "NA", "heureDebut": "TBD", "heureFin": "TBD", "typePopulation": "Acteurs associatifs / Population (Hitiaa O Te Ra - Papara)", "status": "To do"}, {"date": "2026-09-30", "reference": "Mission 8", "action": "Déplacement bateau", "ile": "Moorea", "typeConcertation": "NA", "heureDepart": "05h40", "heureArrivee": "06h45", "heureDebut": "NA", "heureFin": "NA", "typePopulation": "NA", "status": "To do"}, {"date": "2026-09-30", "reference": "Mission 8", "action": "Concertation", "ile": "Moorea", "typeConcertation": "Présentiel", "heureDepart": "NA", "heureArrivee": "NA", "heureDebut": "08h00", "heureFin": "12h00", "typePopulation": "Institutionnel", "status": "To do"}, {"date": "2026-09-30", "reference": "Mission 8", "action": "Concertation", "ile": "Moorea", "typeConcertation": "Présentiel", "heureDepart": "NA", "heureArrivee": "NA", "heureDebut": "16h30", "heureFin": "19h30", "typePopulation": "Acteurs économiques", "status": "To do"}, {"date": "2026-10-01", "reference": "Mission 8", "action": "Concertation", "ile": "Moorea", "typeConcertation": "Présentiel", "heureDepart": "NA", "heureArrivee": "NA", "heureDebut": "17h00", "heureFin": "20h30", "typePopulation": "Acteurs associatifs / population", "status": "To do"}, {"date": "2026-10-02", "reference": "Mission 8", "action": "Déplacement bateau", "ile": "Tahiti", "typeConcertation": "NA", "heureDepart": "08h15", "heureArrivee": "09h00", "heureDebut": "NA", "heureFin": "NA", "typePopulation": "NA", "status": "To do"}, {"date": "2026-10-05", "reference": "Mission 9", "action": "Déplacement avion", "ile": "Bora Bora", "typeConcertation": "NA", "heureDepart": "06h35", "heureArrivee": "07h25", "heureDebut": "NA", "heureFin": "NA", "typePopulation": "NA", "status": "To do"}, {"date": "2026-10-05", "reference": "Mission 9", "action": "Concertation", "ile": "Bora Bora", "typeConcertation": "Présentiel", "heureDepart": "NA", "heureArrivee": "NA", "heureDebut": "09h00", "heureFin": "12h00", "typePopulation": "Institutionnel", "status": "To do"}, {"date": "2026-10-05", "reference": "Mission 9", "action": "Concertation", "ile": "Bora Bora", "typeConcertation": "Présentiel", "heureDepart": "NA", "heureArrivee": "NA", "heureDebut": "17h30", "heureFin": "20h40", "typePopulation": "Acteurs économiques", "status": "To do"}, {"date": "2026-10-06", "reference": "Mission 9", "action": "Concertation", "ile": "Bora Bora", "typeConcertation": "Présentiel", "heureDepart": "NA", "heureArrivee": "NA", "heureDebut": "17h00", "heureFin": "19h30", "typePopulation": "Acteurs associatifs / population", "status": "To do"}, {"date": "2026-10-07", "reference": "Mission 9", "action": "Déplacement bateau", "ile": "Maupiti", "typeConcertation": "NA", "heureDepart": "15h15", "heureArrivee": "16h30", "heureDebut": "NA", "heureFin": "NA", "typePopulation": "NA", "status": "To do"}, {"date": "2026-10-08", "reference": "Mission 9", "action": "Concertation", "ile": "Maupiti", "typeConcertation": "Présentiel", "heureDepart": "NA", "heureArrivee": "NA", "heureDebut": "09h00", "heureFin": "12h00", "typePopulation": "Institutionnel", "status": "To do"}, {"date": "2026-10-08", "reference": "Mission 9", "action": "Concertation", "ile": "Maupiti", "typeConcertation": "Présentiel", "heureDepart": "NA", "heureArrivee": "NA", "heureDebut": "14h00", "heureFin": "17h00", "typePopulation": "Acteurs économiques", "status": "To do"}, {"date": "2026-10-09", "reference": "Mission 9", "action": "Concertation", "ile": "Maupiti", "typeConcertation": "Présentiel", "heureDepart": "NA", "heureArrivee": "NA", "heureDebut": "15h00", "heureFin": "17h00", "typePopulation": "Acteurs associatifs / population", "status": "To do"}, {"date": "2026-10-10", "reference": "Mission 9", "action": "Déplacement bateau", "ile": "Bora Bora", "typeConcertation": "NA", "heureDepart": "06h30", "heureArrivee": "07h45", "heureDebut": "NA", "heureFin": "NA", "typePopulation": "NA", "status": "To do"}, {"date": "2026-10-10", "reference": "Mission 9", "action": "Déplacement avion", "ile": "Tahiti", "typeConcertation": "NA", "heureDepart": "11h20", "heureArrivee": "12h10", "heureDebut": "NA", "heureFin": "NA", "typePopulation": "NA", "status": "To do"}, {"date": "2026-10-14", "reference": "Mission 10", "action": "Déplacement avion", "ile": "Ua Huka", "typeConcertation": "NA", "heureDepart": "08h30", "heureArrivee": "14h55", "heureDebut": "NA", "heureFin": "NA", "typePopulation": "NA", "status": "To do"}, {"date": "2026-10-14", "reference": "Mission 10", "action": "Concertation", "ile": "Ua Huka", "typeConcertation": "Présentiel", "heureDepart": "NA", "heureArrivee": "NA", "heureDebut": "16h00", "heureFin": "19h00", "typePopulation": "Institutionnel", "status": "To do"}, {"date": "2026-10-15", "reference": "Mission 10", "action": "Concertation", "ile": "Ua Huka", "typeConcertation": "Présentiel", "heureDepart": "NA", "heureArrivee": "NA", "heureDebut": "TBD", "heureFin": "TBD", "typePopulation": "Acteurs économiques", "status": "To do"}, {"date": "2026-10-15", "reference": "Mission 10", "action": "Concertation", "ile": "Ua Huka", "typeConcertation": "Présentiel", "heureDepart": "NA", "heureArrivee": "NA", "heureDebut": "TBD", "heureFin": "TBD", "typePopulation": "Acteurs associatifs / population", "status": "To do"}, {"date": "2026-10-16", "reference": "Mission 10", "action": "Déplacement avion", "ile": "Nuku Hiva", "typeConcertation": "NA", "heureDepart": "11h15", "heureArrivee": "11h55", "heureDebut": "NA", "heureFin": "NA", "typePopulation": "NA", "status": "To do"}, {"date": "2026-10-16", "reference": "Mission 10", "action": "Concertation", "ile": "Nuku Hiva", "typeConcertation": "Présentiel", "heureDepart": "NA", "heureArrivee": "NA", "heureDebut": "13h30", "heureFin": "16h30", "typePopulation": "Institutionnel", "status": "To do"}, {"date": "2026-10-17", "reference": "Mission 10", "action": "Concertation", "ile": "Nuku Hiva", "typeConcertation": "Présentiel", "heureDepart": "NA", "heureArrivee": "NA", "heureDebut": "TBD", "heureFin": "TBD", "typePopulation": "Acteurs économiques", "status": "To do"}, {"date": "2026-10-17", "reference": "Mission 10", "action": "Concertation", "ile": "Nuku Hiva", "typeConcertation": "Présentiel", "heureDepart": "NA", "heureArrivee": "NA", "heureDebut": "TBD", "heureFin": "TBD", "typePopulation": "Acteurs associatifs / population", "status": "To do"}, {"date": "2026-10-18", "reference": "Mission 10", "action": "Concertation", "ile": "Nuku Hiva", "typeConcertation": "Présentiel", "heureDepart": "NA", "heureArrivee": "NA", "heureDebut": "TBD", "heureFin": "TBD", "typePopulation": "Acteurs associatifs / population", "status": "To do"}, {"date": "2026-10-19", "reference": "Mission 10", "action": "Déplacement avion", "ile": "Tahiti", "typeConcertation": "NA", "heureDepart": "10h40", "heureArrivee": "14h40", "heureDebut": "NA", "heureFin": "NA", "typePopulation": "NA", "status": "To do"}, {"date": "2026-10-21", "reference": "Mission 11", "action": "Déplacement avion", "ile": "Ua Pou", "typeConcertation": "NA", "heureDepart": "08h30", "heureArrivee": "14h50", "heureDebut": "NA", "heureFin": "NA", "typePopulation": "NA", "status": "To do"}, {"date": "2026-10-21", "reference": "Mission 11", "action": "Concertation", "ile": "Ua Pou", "typeConcertation": "Présentiel", "heureDepart": "NA", "heureArrivee": "NA", "heureDebut": "16h00", "heureFin": "19h00", "typePopulation": "Institutionnel", "status": "To do"}, {"date": "2026-10-22", "reference": "Mission 11", "action": "Concertation", "ile": "Ua Pou", "typeConcertation": "Présentiel", "heureDepart": "NA", "heureArrivee": "NA", "heureDebut": "TBD", "heureFin": "TBD", "typePopulation": "Acteurs économiques", "status": "To do"}, {"date": "2026-10-22", "reference": "Mission 11", "action": "Concertation", "ile": "Ua Pou", "typeConcertation": "Présentiel", "heureDepart": "NA", "heureArrivee": "NA", "heureDebut": "TBD", "heureFin": "TBD", "typePopulation": "Acteurs associatifs / population", "status": "To do"}, {"date": "2026-10-23", "reference": "Mission 11", "action": "Déplacement avion", "ile": "Hiva Oa", "typeConcertation": "NA", "heureDepart": "09h10", "heureArrivee": "11h25", "heureDebut": "NA", "heureFin": "NA", "typePopulation": "NA", "status": "To do"}, {"date": "2026-10-23", "reference": "Mission 11", "action": "Concertation", "ile": "Hiva Oa", "typeConcertation": "Présentiel", "heureDepart": "NA", "heureArrivee": "NA", "heureDebut": "16h00", "heureFin": "19h00", "typePopulation": "Institutionnel", "status": "To do"}, {"date": "2026-10-24", "reference": "Mission 11", "action": "Concertation", "ile": "Hiva Oa", "typeConcertation": "Présentiel", "heureDepart": "NA", "heureArrivee": "NA", "heureDebut": "TBD", "heureFin": "TBD", "typePopulation": "Acteurs économiques", "status": "To do"}, {"date": "2026-10-24", "reference": "Mission 11", "action": "Concertation", "ile": "Hiva Oa", "typeConcertation": "Présentiel", "heureDepart": "NA", "heureArrivee": "NA", "heureDebut": "TBD", "heureFin": "TBD", "typePopulation": "Acteurs associatifs / population", "status": "To do"}, {"date": "2026-10-25", "reference": "Mission 11", "action": "Concertation", "ile": "Tahiti", "typeConcertation": "NA", "heureDepart": "11h40", "heureArrivee": "14h30", "heureDebut": "NA", "heureFin": "NA", "typePopulation": "NA", "status": "To do"}, {"date": "2026-10-27", "reference": "Mission 12", "action": "Déplacement avion", "ile": "Mangareva", "typeConcertation": "NA", "heureDepart": "06h30", "heureArrivee": "11h15", "heureDebut": "NA", "heureFin": "NA", "typePopulation": "NA", "status": "To do"}, {"date": "2026-10-27", "reference": "Mission 12", "action": "Concertation", "ile": "Mangareva", "typeConcertation": "Présentiel", "heureDepart": "NA", "heureArrivee": "NA", "heureDebut": "14h00", "heureFin": "17h00", "typePopulation": "Institutionnel", "status": "To do"}, {"date": "2026-10-28", "reference": "Mission 12", "action": "Concertation", "ile": "Mangareva", "typeConcertation": "Présentiel", "heureDepart": "NA", "heureArrivee": "NA", "heureDebut": "TBD", "heureFin": "TBD", "typePopulation": "Acteurs économiques", "status": "To do"}, {"date": "2026-10-29", "reference": "Mission 12", "action": "Concertation", "ile": "Mangareva", "typeConcertation": "Présentiel", "heureDepart": "NA", "heureArrivee": "NA", "heureDebut": "TBD", "heureFin": "TBD", "typePopulation": "Acteurs associatifs / population", "status": "To do"}, {"date": "2026-10-31", "reference": "Mission 12", "action": "Déplacement avion", "ile": "Tahiti", "typeConcertation": "NA", "heureDepart": "12h00", "heureArrivee": "14h50", "heureDebut": "NA", "heureFin": "NA", "typePopulation": "NA", "status": "To do"}];
+
+const DOW = ["Dim","Lun","Mar","Mer","Jeu","Ven","Sam"];
+const MONTHS = ["Janvier","Février","Mars","Avril","Mai","Juin","Juillet","Août","Septembre","Octobre","Novembre","Décembre"];
+const MONTHS_FULL_LOWER = ["janvier","février","mars","avril","mai","juin","juillet","août","septembre","octobre","novembre","décembre"];
+const DOW_FULL = ["dimanche","lundi","mardi","mercredi","jeudi","vendredi","samedi"];
+
+const DAY_WIDTH = 34;
+const LABEL_COL_WIDTH = 190;
+const MARKER_SIZE = 22;
+const MARKER_GAP = 5;
+const ROW_MIN_HEIGHT = 44;
+const ROW_PAD = 12;
+const HEADER_HEIGHT = 60; // month row + day row
+
+const TODAY = new Date(2026, 7, 13); // 13 août 2026
+
+function parseISO(s){
+  const [y,m,d] = s.split("-").map(Number);
+  return new Date(y, m-1, d);
+}
+function daysBetween(a,b){
+  return Math.round((b - a) / 86400000);
+}
+function fmtLongDate(d){
+  return `${DOW_FULL[d.getDay()]} ${d.getDate()} ${MONTHS_FULL_LOWER[d.getMonth()]} ${d.getFullYear()}`;
+}
+
+// ---- derive min/max date range
+const allDates = DATA.map(r => parseISO(r.date));
+const minDate = new Date(Math.min(...allDates));
+const maxDate = new Date(Math.max(...allDates));
+const totalDays = daysBetween(minDate, maxDate) + 1;
+
+function xForDate(d){
+  return daysBetween(minDate, d) * DAY_WIDTH;
+}
+
+// ---- group rows by reference, preserving first-appearance order
+const refOrder = [];
+const refMap = new Map();
+DATA.forEach(r => {
+  if(!refMap.has(r.reference)){
+    refMap.set(r.reference, []);
+    refOrder.push(r.reference);
+  }
+  refMap.get(r.reference).push(r);
+});
+
+function statusClass(s){
+  if(s === "Done") return "status-done";
+  if(s === "Cancelled") return "status-cancelled";
+  return "status-todo";
+}
+function statusLabel(s){
+  if(s === "Done") return "Terminé";
+  if(s === "Cancelled") return "Annulé";
+  return "À venir";
+}
+function iconFor(r){
+  if(r.action === "Déplacement avion") return r.ile === "Tahiti" ? "🛬" : "🛫";
+  if(r.action === "Déplacement bateau") return "🚢";
+  if(r.action === "Concertation") return r.typeConcertation === "Visio" ? "💻" : "🤝";
+  return "•";
+}
+function actionLabel(r){
+  if(r.action === "Déplacement avion") return r.ile === "Tahiti" ? "Vol retour — atterrissage" : "Vol aller — décollage";
+  if(r.action === "Déplacement bateau") return "Déplacement bateau";
+  if(r.action === "Concertation") return r.typeConcertation === "Visio" ? "Concertation (visio)" : "Concertation (présentiel)";
+  return r.action;
+}
+
+// ---- build header (month + day rows)
+const ganttInner = document.getElementById("ganttInner");
+const totalWidth = LABEL_COL_WIDTH + totalDays * DAY_WIDTH;
+ganttInner.style.width = totalWidth + "px";
+
+// header background container
+const headerWrap = document.createElement("div");
+headerWrap.style.position = "sticky";
+headerWrap.style.top = "0";
+headerWrap.style.zIndex = "4";
+headerWrap.style.height = HEADER_HEIGHT + "px";
+
+// label column header (corner)
+const cornerLabel = document.createElement("div");
+cornerLabel.className = "label-col-header";
+cornerLabel.style.position = "sticky";
+cornerLabel.style.left = "0";
+cornerLabel.style.width = LABEL_COL_WIDTH + "px";
+cornerLabel.style.height = HEADER_HEIGHT + "px";
+cornerLabel.style.zIndex = "6";
+cornerLabel.style.display = "flex";
+cornerLabel.style.alignItems = "center";
+cornerLabel.style.padding = "0 10px";
+cornerLabel.style.fontSize = "11px";
+cornerLabel.style.fontWeight = "700";
+cornerLabel.style.color = "var(--text-muted)";
+cornerLabel.textContent = "MISSION / VISIO";
+headerWrap.appendChild(cornerLabel);
+
+const monthRow = document.createElement("div");
+monthRow.className = "month-row";
+monthRow.style.position = "absolute";
+monthRow.style.left = LABEL_COL_WIDTH + "px";
+monthRow.style.top = "0";
+monthRow.style.width = (totalDays*DAY_WIDTH) + "px";
+
+const dayRow = document.createElement("div");
+dayRow.className = "day-row";
+dayRow.style.position = "absolute";
+dayRow.style.left = LABEL_COL_WIDTH + "px";
+dayRow.style.top = "26px";
+dayRow.style.width = (totalDays*DAY_WIDTH) + "px";
+
+let curMonthKey = null, curMonthStart = 0;
+for(let i=0;i<totalDays;i++){
+  const d = new Date(minDate); d.setDate(d.getDate()+i);
+  const key = d.getFullYear()+"-"+d.getMonth();
+  if(key !== curMonthKey){
+    if(curMonthKey !== null){
+      const prevCell = document.createElement("div");
+    }
+    curMonthKey = key; curMonthStart = i;
+  }
+  const dc = document.createElement("div");
+  dc.className = "day-cell" + ((d.getDay()===0||d.getDay()===6) ? " weekend" : "");
+  dc.style.left = (i*DAY_WIDTH) + "px";
+  dc.style.width = DAY_WIDTH + "px";
+  dc.innerHTML = `<span class="dow">${DOW[d.getDay()]}</span><span class="dom">${d.getDate()}</span>`;
+  dayRow.appendChild(dc);
+}
+
+// month cells: compute spans
+let idx = 0;
+while(idx < totalDays){
+  const d = new Date(minDate); d.setDate(d.getDate()+idx);
+  const monthIdx = d.getMonth(), year = d.getFullYear();
+  let span = 0;
+  while(idx+span < totalDays){
+    const dd = new Date(minDate); dd.setDate(dd.getDate()+idx+span);
+    if(dd.getMonth() !== monthIdx || dd.getFullYear() !== year) break;
+    span++;
+  }
+  const mc = document.createElement("div");
+  mc.className = "month-cell";
+  mc.style.left = (idx*DAY_WIDTH) + "px";
+  mc.style.width = (span*DAY_WIDTH) + "px";
+  mc.textContent = MONTHS[monthIdx] + " " + year;
+  monthRow.appendChild(mc);
+  idx += span;
+}
+
+headerWrap.appendChild(monthRow);
+headerWrap.appendChild(dayRow);
+ganttInner.appendChild(headerWrap);
+
+// ---- body: background day columns (weekend shading) spanning full height, added after we know total height
+const bodyWrap = document.createElement("div");
+bodyWrap.style.position = "relative";
+bodyWrap.style.left = "0";
+bodyWrap.style.top = "0";
+ganttInner.appendChild(bodyWrap);
+
+let curY = HEADER_HEIGHT;
+const rowLayout = []; // {reference, y, height, events:[{r,x,y}], minX, maxX}
+
+refOrder.forEach(refName => {
+  const events = refMap.get(refName).slice().sort((a,b)=> parseISO(a.date)-parseISO(b.date));
+  // group by date for stacking
+  const byDate = new Map();
+  events.forEach(ev => {
+    if(!byDate.has(ev.date)) byDate.set(ev.date, []);
+    byDate.get(ev.date).push(ev);
+  });
+  const maxStack = Math.max(...Array.from(byDate.values()).map(a=>a.length));
+  const rowHeight = Math.max(ROW_MIN_HEIGHT, maxStack*(MARKER_SIZE+MARKER_GAP) - MARKER_GAP + ROW_PAD*2);
+  const rowCenterY = curY + rowHeight/2;
+
+  const islands = [...new Set(events.map(e=>e.ile).filter(i=>i && i!=="NA" && i!=="Tahiti"))];
+  const placedEvents = [];
+  byDate.forEach((evs, dateKey) => {
+    const d = parseISO(dateKey);
+    const x = xForDate(d) + DAY_WIDTH/2;
+    const n = evs.length;
+    evs.forEach((ev, i) => {
+      const y = rowCenterY + (i - (n-1)/2) * (MARKER_SIZE + MARKER_GAP);
+      placedEvents.push({ev, x, y});
+    });
+  });
+
+  const minX = xForDate(parseISO(events[0].date)) + DAY_WIDTH/2;
+  const maxX = xForDate(parseISO(events[events.length-1].date)) + DAY_WIDTH/2;
+
+  rowLayout.push({
+    reference: refName,
+    islands,
+    y: curY,
+    height: rowHeight,
+    centerY: rowCenterY,
+    minX, maxX,
+    events: placedEvents
+  });
+
+  curY += rowHeight;
+});
+
+const totalBodyHeight = curY - HEADER_HEIGHT;
+bodyWrap.style.height = totalBodyHeight + "px";
+bodyWrap.style.width = totalWidth + "px";
+
+// weekend background columns
+for(let i=0;i<totalDays;i++){
+  const d = new Date(minDate); d.setDate(d.getDate()+i);
+  if(d.getDay()===0 || d.getDay()===6){
+    const col = document.createElement("div");
+    col.className = "bg-daycol weekend";
+    col.style.left = (LABEL_COL_WIDTH + i*DAY_WIDTH) + "px";
+    col.style.top = HEADER_HEIGHT + "px";
+    col.style.width = DAY_WIDTH + "px";
+    col.style.height = totalBodyHeight + "px";
+    bodyWrap.appendChild(col);
+  }
+}
+
+// today line
+if(TODAY >= minDate && TODAY <= maxDate){
+  const tx = LABEL_COL_WIDTH + xForDate(TODAY) + DAY_WIDTH/2;
+  const line = document.createElement("div");
+  line.className = "today-line";
+  line.style.left = tx + "px";
+  line.style.top = HEADER_HEIGHT + "px";
+  line.style.height = totalBodyHeight + "px";
+  bodyWrap.appendChild(line);
+}
+
+// rows: label + track + markers
+rowLayout.forEach(row => {
+  // row wrapper spans the FULL scrollable width so the sticky label inside it
+  // has room to stick to the left edge as the user scrolls horizontally.
+  const rowWrap = document.createElement("div");
+  rowWrap.style.position = "absolute";
+  rowWrap.style.left = "0";
+  rowWrap.style.top = row.y + "px";
+  rowWrap.style.width = totalWidth + "px";
+  rowWrap.style.height = row.height + "px";
+  rowWrap.style.borderBottom = "1px solid var(--gridline)";
+  bodyWrap.appendChild(rowWrap);
+
+  // row label (sticky to the left edge of the scroll viewport)
+  const label = document.createElement("div");
+  label.className = "row-label";
+  label.style.width = LABEL_COL_WIDTH + "px";
+  label.style.height = row.height + "px";
+  const nameEl = document.createElement("div");
+  nameEl.className = "ref-name";
+  nameEl.textContent = row.reference;
+  const subEl = document.createElement("div");
+  subEl.className = "ref-sub";
+  subEl.textContent = row.islands.join(" · ") || "Tahiti";
+  label.appendChild(nameEl);
+  label.appendChild(subEl);
+  rowWrap.appendChild(label);
+
+  // mission connecting line (relative to rowWrap's own top)
+  if(row.maxX > row.minX){
+    const line = document.createElement("div");
+    line.className = "mission-line";
+    line.style.left = (LABEL_COL_WIDTH + row.minX) + "px";
+    line.style.top = (row.centerY - row.y - 1) + "px";
+    line.style.width = (row.maxX - row.minX) + "px";
+    rowWrap.appendChild(line);
+  }
+
+  // markers (relative to rowWrap's own top)
+  row.events.forEach(({ev, x, y}) => {
+    const m = document.createElement("div");
+    m.className = "marker " + statusClass(ev.status);
+    m.style.left = (LABEL_COL_WIDTH + x - MARKER_SIZE/2) + "px";
+    m.style.top = (y - row.y - MARKER_SIZE/2) + "px";
+    m.textContent = iconFor(ev);
+    m.tabIndex = 0;
+    m.setAttribute("role","button");
+    m.setAttribute("aria-label", `${row.reference}, ${actionLabel(ev)}, ${fmtLongDate(parseISO(ev.date))}, ${statusLabel(ev.status)}`);
+    m.addEventListener("mouseenter", (e)=>showTooltip(e, row, ev));
+    m.addEventListener("mousemove", (e)=>positionTooltip(e));
+    m.addEventListener("mouseleave", hideTooltip);
+    m.addEventListener("focus", (e)=>showTooltip(e, row, ev, true));
+    m.addEventListener("blur", hideTooltip);
+    m.addEventListener("click", (e)=>{ e.stopPropagation(); showTooltip(e, row, ev, true); });
+    rowWrap.appendChild(m);
+  });
+});
+
+document.body.addEventListener("click", hideTooltip);
+
+// ---- tooltip
+const tooltip = document.getElementById("tooltip");
+function buildTooltipHTML(row, ev){
+  const d = parseISO(ev.date);
+  let timeRows = "";
+  if(ev.action === "Concertation"){
+    timeRows = `<div class="tt-row"><b>${escapeHtml(ev.heureDebut)}</b> → <b>${escapeHtml(ev.heureFin)}</b></div>
+                <div class="tt-row">Public : <b>${escapeHtml(ev.typePopulation)}</b></div>`;
+  } else {
+    timeRows = `<div class="tt-row">Départ <b>${escapeHtml(ev.heureDepart)}</b> — Arrivée <b>${escapeHtml(ev.heureArrivee)}</b></div>`;
+  }
+  return `
+    <div class="tt-title">${escapeHtml(row.reference)} — ${escapeHtml(ev.ile)}</div>
+    <div class="tt-row">${escapeHtml(fmtLongDate(d))}</div>
+    <div class="tt-row">${escapeHtml(actionLabel(ev))}</div>
+    ${timeRows}
+    <span class="tt-status ${statusClass(ev.status)}">${statusLabel(ev.status)}</span>
+  `;
+}
+function escapeHtml(s){
+  const div = document.createElement("div");
+  div.textContent = (s===undefined||s===null) ? "" : String(s);
+  return div.innerHTML;
+}
+let activeMarker = null;
+function showTooltip(e, row, ev, keepOpen){
+  if(activeMarker) activeMarker.classList.remove("active");
+  activeMarker = e.currentTarget;
+  activeMarker.classList.add("active");
+  tooltip.innerHTML = buildTooltipHTML(row, ev);
+  tooltip.classList.add("show");
+  positionTooltip(e);
+}
+function positionTooltip(e){
+  const pad = 14;
+  let cx, cy;
+  if(e.clientX !== undefined && e.type !== "focus" && e.type !== "click"){
+    cx = e.clientX; cy = e.clientY;
+  } else {
+    const rect = e.currentTarget.getBoundingClientRect();
+    cx = rect.left + rect.width/2; cy = rect.top;
+  }
+  const tw = 280, th = tooltip.offsetHeight || 100;
+  let left = cx + pad;
+  let top = cy + pad;
+  if(left + tw > window.innerWidth) left = cx - tw - pad;
+  if(top + th > window.innerHeight) top = cy - th - pad;
+  tooltip.style.left = Math.max(8,left) + "px";
+  tooltip.style.top = Math.max(8,top) + "px";
+}
+function hideTooltip(){
+  tooltip.classList.remove("show");
+  if(activeMarker){ activeMarker.classList.remove("active"); activeMarker=null; }
+}
+
+// ---- scroll to today
+document.getElementById("scrollToday").addEventListener("click", () => {
+  const scroller = document.getElementById("ganttScroll");
+  const tx = xForDate(TODAY>minDate&&TODAY<maxDate?TODAY:minDate);
+  scroller.scrollTo({ left: Math.max(0, tx - 200), behavior: "smooth" });
+});
+
+document.getElementById("rangeInfo").textContent =
+  `Période : ${fmtLongDate(minDate)} → ${fmtLongDate(maxDate)}  ·  ${DATA.length} événements  ·  ${refOrder.length} missions/visios`;
+
+// ---- Progress bar (Missions + Visios — individual concertations not counted separately)
+const missionOrder = refOrder.filter(r => r.startsWith("Mission") || r.startsWith("Visio"));
+const missionStatus = missionOrder.map(name => {
+  const evs = refMap.get(name);
+  const isDone = evs.every(ev => ev.status !== "To do"); // Done or Cancelled only, nothing pending
+  return { name, done: isDone };
+});
+const doneCount = missionStatus.filter(m => m.done).length;
+const totalMissions = missionStatus.length;
+const pct = totalMissions ? Math.round((doneCount/totalMissions)*100) : 0;
+
+document.getElementById("progressCount").innerHTML =
+  `<b>${doneCount}</b> / ${totalMissions} missions &amp; visios terminées (${pct}%)`;
+document.getElementById("progressFill").style.width = pct + "%";
+
+const segWrap = document.getElementById("progressSegments");
+missionStatus.forEach(m => {
+  const seg = document.createElement("div");
+  seg.className = "progress-seg " + (m.done ? "done" : "pending");
+  seg.title = `${m.name} — ${m.done ? "terminée" : "à venir"}`;
+  segWrap.appendChild(seg);
+});
+
+// scroll to "today" on load if within range
+window.addEventListener("load", () => {
+  const scroller = document.getElementById("ganttScroll");
+  if(TODAY >= minDate && TODAY <= maxDate){
+    scroller.scrollLeft = Math.max(0, xForDate(TODAY) - 250);
+  }
+});
+
+// ---- table view
+const tbody = document.getElementById("dataTableBody");
+DATA.forEach(r => {
+  const tr = document.createElement("tr");
+  const d = parseISO(r.date);
+  const dateStr = `${String(d.getDate()).padStart(2,"0")}/${String(d.getMonth()+1).padStart(2,"0")}/${d.getFullYear()}`;
+  const cells = [dateStr, r.reference, r.action, r.ile, r.typeConcertation, r.heureDepart, r.heureArrivee, r.heureDebut, r.heureFin, r.typePopulation];
+  cells.forEach(c => {
+    const td = document.createElement("td");
+    td.textContent = c;
+    tr.appendChild(td);
+  });
+  const statusTd = document.createElement("td");
+  statusTd.textContent = statusLabel(r.status);
+  statusTd.className = statusClass(r.status);
+  tr.appendChild(statusTd);
+  tbody.appendChild(tr);
+});
+</script>
+</body>
+</html>
