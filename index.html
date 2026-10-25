@@ -456,7 +456,7 @@ function fmtLongDate(d){
 }
 
 // ---- derive min/max date range
-const allDates = DATA.map(r => parseISO(r.date));
+const allDates = DATA.filter(r => /^\d{4}-\d{2}-\d{2}$/.test(r.date)).map(r => parseISO(r.date));
 const minDate = new Date(Math.min(...allDates));
 const maxDate = new Date(Math.max(...allDates));
 const totalDays = daysBetween(minDate, maxDate) + 1;
